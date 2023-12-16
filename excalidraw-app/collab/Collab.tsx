@@ -36,13 +36,6 @@ import {
   SyncableExcalidrawElement,
 } from "../data";
 import {
-  isSavedToFirebase,
-  loadFilesFromFirebase,
-  loadFromFirebase,
-  saveFilesToFirebase,
-  saveToFirebase,
-} from "../data/firebase";
-import {
   importUsernameFromLocalStorage,
   saveUsernameToLocalStorage,
 } from "../data/localStorage";
@@ -71,6 +64,7 @@ import { resetBrowserStateVersions } from "../data/tabSync";
 import { LocalData } from "../data/LocalData";
 import { atom, useAtom } from "jotai";
 import { appJotaiStore } from "../app-jotai";
+import { RemoteStorage, getRemoteStorage } from "../data/remoteStorage";
 
 export const collabAPIAtom = atom<CollabAPI | null>(null);
 export const collabDialogShownAtom = atom(false);
@@ -112,6 +106,7 @@ class Collab extends PureComponent<Props, CollabState> {
   private socketInitializationTimer?: number;
   private lastBroadcastedOrReceivedSceneVersion: number = -1;
   private collaborators = new Map<string, Collaborator>();
+  private remoteStorage: RemoteStorage;
 
   constructor(props: Props) {
     super(props);
@@ -121,6 +116,7 @@ class Collab extends PureComponent<Props, CollabState> {
       activeRoomLink: "",
     };
     this.portal = new Portal(this);
+    this.remoteStorage = getRemoteStorage();
     this.fileManager = new FileManager({
       getFiles: async (fileIds) => {
         const { roomId, roomKey } = this.portal;
@@ -128,7 +124,11 @@ class Collab extends PureComponent<Props, CollabState> {
           throw new AbortError();
         }
 
-        return loadFilesFromFirebase(`files/rooms/${roomId}`, roomKey, fileIds);
+        return this.remoteStorage.loadFilesFromStorage(
+          `files/rooms/${roomId}`,
+          roomKey,
+          fileIds,
+        );
       },
       saveFiles: async ({ addedFiles }) => {
         const { roomId, roomKey } = this.portal;
@@ -136,7 +136,7 @@ class Collab extends PureComponent<Props, CollabState> {
           throw new AbortError();
         }
 
-        return saveFilesToFirebase({
+        return this.remoteStorage.saveFilesToStorage({
           prefix: `${FIREBASE_STORAGE_PREFIXES.collabFiles}/${roomId}`,
           files: await encodeFilesForUpload({
             files: addedFiles,
@@ -224,7 +224,7 @@ class Collab extends PureComponent<Props, CollabState> {
     if (
       this.isCollaborating() &&
       (this.fileManager.shouldPreventUnload(syncableElements) ||
-        !isSavedToFirebase(this.portal, syncableElements))
+        !this.remoteStorage.isSavedToStorage(this.portal, syncableElements))
     ) {
       // this won't run in time if user decides to leave the site, but
       //  the purpose is to run in immediately after user decides to stay
@@ -238,7 +238,7 @@ class Collab extends PureComponent<Props, CollabState> {
     syncableElements: readonly SyncableExcalidrawElement[],
   ) => {
     try {
-      const savedData = await saveToFirebase(
+      const savedData = await this.remoteStorage.saveToStorage(
         this.portal,
         syncableElements,
         this.excalidrawAPI.getAppState(),
@@ -582,7 +582,7 @@ class Collab extends PureComponent<Props, CollabState> {
       this.excalidrawAPI.resetScene();
 
       try {
-        const elements = await loadFromFirebase(
+        const elements = await this.remoteStorage.loadFromStorage(
           roomLinkData.roomId,
           roomLinkData.roomKey,
           this.portal.socket,

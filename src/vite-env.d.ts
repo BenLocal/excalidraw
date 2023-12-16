@@ -55,6 +55,9 @@ interface ImportMetaEnv {
   MODE: string;
   DEV: string;
   PROD: string;
+
+  REMOTE_STORAGE_TYPE: string;
+  REMOTE_STORAGE_HTTP_URL: string;
 }
 
 interface ImportMeta {
